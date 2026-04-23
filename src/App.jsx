@@ -292,11 +292,42 @@ function CardPaymentForm({ amount, onPaid, onCancel, label="Pay Entry Fee", emai
       theme: "night",
       variables: {
         colorPrimary: "#dc1e1e",
-        colorBackground: "#1a1a1a",
+        colorBackground: "#111111",
         colorText: "#f0f0f0",
         colorDanger: "#ff6b6b",
+        colorTextSecondary: "#888888",
         fontFamily: "'Oswald', Georgia, serif",
         borderRadius: "8px",
+        spacingUnit: "4px",
+      },
+      rules: {
+        ".Input": {
+          backgroundColor: "rgba(255,255,255,0.06)",
+          border: "1px solid rgba(220,30,30,0.25)",
+          color: "#f0f0f0",
+        },
+        ".Input:focus": {
+          border: "1px solid rgba(220,30,30,0.6)",
+          boxShadow: "none",
+        },
+        ".Label": {
+          color: "#888888",
+          fontSize: "10px",
+          letterSpacing: "2px",
+          textTransform: "uppercase",
+        },
+        ".Tab": {
+          backgroundColor: "rgba(255,255,255,0.04)",
+          border: "1px solid rgba(220,30,30,0.15)",
+        },
+        ".Tab--selected": {
+          backgroundColor: "rgba(220,30,30,0.12)",
+          border: "1px solid rgba(220,30,30,0.4)",
+        },
+        ".Block": {
+          backgroundColor: "transparent",
+          border: "none",
+        },
       },
     },
   };
@@ -1148,6 +1179,17 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Oswald',Georgia,serif", color:C.white }}>
       <FontLoader />
+      <style>{`
+        .__PrivateStripeElement, .StripeElement, iframe[name^="__privateStripeFrame"] {
+          background: transparent !important;
+          border: none !important;
+        }
+        .p-Input {
+          background: rgba(255,255,255,0.06) !important;
+          border: 1px solid rgba(220,30,30,0.25) !important;
+          border-radius: 8px !important;
+        }
+      `}</style>
       {page==="home"    && <HomePage    user={user} tournaments={tournaments} setPage={setPage} />}
       {page==="enter"   && <EnterPage   user={user} setUser={setUser} tournaments={tournaments} setTournaments={setTournaments} />}
       {page==="rules"   && <RulesPage />}
