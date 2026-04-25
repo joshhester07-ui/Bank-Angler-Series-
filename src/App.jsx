@@ -1,4 +1,10 @@
 import { useState, useRef, useEffect } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
+import { db } from "./firebase";
+import { collection, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+
+const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 const LOGO_SRC = "https://i.imgur.com/ZymlpsF.png";
 
