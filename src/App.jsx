@@ -423,7 +423,7 @@ function AuthScreen({ onLogin }) {
         "auth/invalid-credential": "Incorrect email or password.",
         "auth/too-many-requests": "Too many attempts. Please try again later.",
       };
-      setErr(msgs[e.code] || "Something went wrong. Please try again.");
+      setErr(msgs[e.code] || `Error: ${e.code || e.message}`);
     } finally {
       setBusy(false);
     }
