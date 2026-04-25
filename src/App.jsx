@@ -382,27 +382,70 @@ function AuthScreen({ onLogin }) {
   const [pass2, setPass2]   = useState("");
   const [notify, setNotify] = useState(true);
   const [err, setErr]       = useState("");
-  const [users, setUsers]   = useState(()=>JSON.parse(localStorage.getItem("bas_users")||"[]"));
+  const [msg, setMsg]       = useState("");
+  const [busy, setBusy]     = useState(false);
 
-  function save(u) { localStorage.setItem("bas_users",JSON.stringify(u)); setUsers(u); }
+  async function submit() {
+    setErr(""); setMsg(""); setBusy(true);
+    try {
+      if (mode==="login") {
+        // Admin bypass
+        if (email===ADMIN_EMAIL && pass===ADMIN_PASS) {
+          onLogin({ name:"Admin", email:ADMIN_EMAIL, isAdmin:true });
+          return;
+        }
+        const { signInWithEmailAndPassword } = await import("firebase/auth");
+        const { auth } = await import("./firebase");
+        const cred = await signInWithEmailAndPassword(auth, email, pass);
+        const snap = await getDoc(doc(db, "users", email.toLowerCase()));
+        const userData = snap.exists() ? snap.data() : { name: cred.user.displayName||email, email: email.toLowerCase() };
+        onLogin(userData);
+      } else {
+        if (!name.trim()) { setErr("Please enter your name."); return; }
+        if (!email.includes("@")) { setErr("Please enter a valid email."); return; }
+        if (pass.length < 6) { setErr("Password must be at least 6 characters."); return; }
+        if (pass!==pass2) { setErr("Passwords don't match."); return; }
+        const { createUserWithEmailAndPassword, updateProfile } = await import("firebase/auth");
+        const { auth } = await import("./firebase");
+        const cred = await createUserWithEmailAndPassword(auth, email, pass);
+        await updateProfile(cred.user, { displayName: name.trim() });
+        const nu = { id:cred.user.uid, name:name.trim(), email:email.toLowerCase(), notify, joined:todayStr(), card:null };
+        await setDoc(doc(db, "users", email.toLowerCase()), nu);
+        onLogin(nu);
+      }
+    } catch(e) {
+      const msgs = {
+        "auth/user-not-found": "No account found with that email.",
+        "auth/wrong-password": "Incorrect password.",
+        "auth/email-already-in-use": "An account with that email already exists.",
+        "auth/invalid-email": "Please enter a valid email address.",
+        "auth/weak-password": "Password must be at least 6 characters.",
+        "auth/invalid-credential": "Incorrect email or password.",
+        "auth/too-many-requests": "Too many attempts. Please try again later.",
+      };
+      setErr(msgs[e.code] || "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
-  function submit() {
-    setErr("");
-    if (mode==="login") {
-      if (email===ADMIN_EMAIL && pass===ADMIN_PASS) { onLogin({ name:"Admin", email:ADMIN_EMAIL, isAdmin:true }); return; }
-      const u = users.find(u=>u.email.toLowerCase()===email.toLowerCase());
-      if (!u) { setErr("No account found with that email."); return; }
-      if (u.pass!==pass) { setErr("Incorrect password."); return; }
-      onLogin(u);
-    } else {
-      if (!name.trim()) { setErr("Please enter your name."); return; }
-      if (!email.includes("@")) { setErr("Please enter a valid email."); return; }
-      if (pass.length < 6) { setErr("Password must be at least 6 characters."); return; }
-      if (pass!==pass2) { setErr("Passwords don't match."); return; }
-      if (users.find(u=>u.email.toLowerCase()===email.toLowerCase())) { setErr("An account with that email already exists."); return; }
-      const nu = { id:Date.now().toString(36), name:name.trim(), email:email.toLowerCase(), pass, notify, tournaments:[], joined:todayStr(), card:null };
-      save([...users, nu]);
-      onLogin(nu);
+  async function forgotPassword() {
+    setErr(""); setMsg("");
+    if (!email.includes("@")) { setErr("Enter your email address first, then tap Forgot Password."); return; }
+    setBusy(true);
+    try {
+      const { sendPasswordResetEmail } = await import("firebase/auth");
+      const { auth } = await import("./firebase");
+      await sendPasswordResetEmail(auth, email);
+      setMsg(`Password reset email sent to ${email}. Check your inbox!`);
+    } catch(e) {
+      const msgs = {
+        "auth/user-not-found": "No account found with that email.",
+        "auth/invalid-email": "Please enter a valid email address.",
+      };
+      setErr(msgs[e.code] || "Could not send reset email. Please try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -414,12 +457,13 @@ function AuthScreen({ onLogin }) {
         <div style={{ width:"100%", maxWidth:"400px" }}>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", background:C.faint, borderRadius:"10px", padding:"4px", marginBottom:"20px" }}>
             {["login","register"].map(m=>(
-              <button key={m} onClick={()=>{setMode(m);setErr("");}} style={{ padding:"10px", borderRadius:"8px", border:"none", cursor:"pointer", fontFamily:"'Oswald',Georgia,serif", fontWeight:"bold", fontSize:"13px", letterSpacing:"1px", textTransform:"uppercase", background:mode===m?`linear-gradient(135deg,#8b0f0f,${C.red})`:"transparent", color:mode===m?C.white:C.dim, transition:"all 0.2s" }}>
+              <button key={m} onClick={()=>{setMode(m);setErr("");setMsg("");}} style={{ padding:"10px", borderRadius:"8px", border:"none", cursor:"pointer", fontFamily:"'Oswald',Georgia,serif", fontWeight:"bold", fontSize:"13px", letterSpacing:"1px", textTransform:"uppercase", background:mode===m?`linear-gradient(135deg,#8b0f0f,${C.red})`:"transparent", color:mode===m?C.white:C.dim, transition:"all 0.2s" }}>
                 {m==="login"?"Sign In":"Register"}
               </button>
             ))}
           </div>
           <Err msg={err} />
+          {msg && <div style={{ color:C.green, fontSize:"12px", background:C.greenD, borderRadius:"6px", padding:"8px 12px", marginBottom:"10px" }}>✓ {msg}</div>}
           {mode==="register" && <Inp label="Full Name" placeholder="Your name" value={name} onChange={e=>setName(e.target.value)} />}
           <Inp label="Email" type="email" placeholder="your@email.com" value={email} onChange={e=>setEmail(e.target.value)} />
           <Inp label="Password" type="password" placeholder="Password" value={pass} onChange={e=>setPass(e.target.value)} />
@@ -430,10 +474,17 @@ function AuthScreen({ onLogin }) {
               <label htmlFor="notif" style={{ fontSize:"13px", color:C.dim }}>Notify me about upcoming tournaments</label>
             </div>
           </>}
-          <button onClick={submit} style={{ ...base.btnRed, width:"100%", padding:"14px", fontSize:"15px", textAlign:"center" }}>
-            {mode==="login"?"Sign In →":"Create Account →"}
+          <button onClick={submit} disabled={busy} style={{ ...base.btnRed, width:"100%", padding:"14px", fontSize:"15px", textAlign:"center", opacity:busy?0.7:1 }}>
+            {busy?"Please wait...":mode==="login"?"Sign In →":"Create Account →"}
           </button>
-          <div style={{ textAlign:"center", marginTop:"16px", fontSize:"12px", color:C.dim }}>
+          {mode==="login" && (
+            <div style={{ textAlign:"center", marginTop:"12px" }}>
+              <span onClick={forgotPassword} style={{ fontSize:"12px", color:C.red, cursor:"pointer", textDecoration:"underline" }}>
+                Forgot Password?
+              </span>
+            </div>
+          )}
+          <div style={{ textAlign:"center", marginTop:"12px", fontSize:"12px", color:C.dim }}>
             {mode==="login" ? <>Don't have an account? <span onClick={()=>setMode("register")} style={{ color:C.red, cursor:"pointer" }}>Register</span></> : <>Already registered? <span onClick={()=>setMode("login")} style={{ color:C.red, cursor:"pointer" }}>Sign In</span></>}
           </div>
         </div>
@@ -812,22 +863,33 @@ function AccountPage({ user, setUser, tournaments, onLogout }) {
     setMsg("Profile updated!");
   }
 
-  function changePass() {
+  async function changePass() {
     setErr(""); setMsg("");
-    if (oldPass!==user.pass) { setErr("Current password is incorrect."); return; }
     if (newPass.length<6) { setErr("New password must be at least 6 characters."); return; }
     if (newPass!==newPass2) { setErr("Passwords don't match."); return; }
-    const users = JSON.parse(localStorage.getItem("bas_users")||"[]");
-    saveUsers(users.map(u=>u.email===user.email?{...u,pass:newPass}:u));
-    setUser({...user,pass:newPass});
-    setOldPass(""); setNewPass(""); setNewPass2("");
-    setMsg("Password changed!");
+    try {
+      const { updatePassword, reauthenticateWithCredential, EmailAuthProvider } = await import("firebase/auth");
+      const { auth } = await import("./firebase");
+      const firebaseUser = auth.currentUser;
+      const cred = EmailAuthProvider.credential(user.email, oldPass);
+      await reauthenticateWithCredential(firebaseUser, cred);
+      await updatePassword(firebaseUser, newPass);
+      setOldPass(""); setNewPass(""); setNewPass2("");
+      setMsg("Password changed!");
+    } catch(e) {
+      const msgs = {
+        "auth/wrong-password": "Current password is incorrect.",
+        "auth/invalid-credential": "Current password is incorrect.",
+        "auth/too-many-requests": "Too many attempts. Please try again later.",
+      };
+      setErr(msgs[e.code] || "Could not change password. Please try again.");
+    }
   }
 
-  function handleCardSaved(cardInfo) {
-    const users = JSON.parse(localStorage.getItem("bas_users")||"[]");
-    saveUsers(users.map(u=>u.email===user.email?{...u,card:cardInfo}:u));
-    setUser({...user,card:cardInfo});
+  async function handleCardSaved(cardInfo) {
+    const updated = {...user, card:cardInfo};
+    await setDoc(doc(db, "users", user.email), updated);
+    setUser(updated);
     setShowCardForm(false);
     setMsg("Card saved!");
   }
@@ -1110,6 +1172,34 @@ export default function App() {
   });
   const [page, setPage]               = useState("home");
   const [tournaments, setTournaments] = useState(generateWeeklyTournaments);
+  const [authReady, setAuthReady]     = useState(false);
+
+  useEffect(()=>{
+    import("firebase/auth").then(({ onAuthStateChanged }) => {
+      import("./firebase").then(({ auth }) => {
+        const unsub = onAuthStateChanged(auth, async firebaseUser => {
+          if (firebaseUser && firebaseUser.email !== ADMIN_EMAIL) {
+            try {
+              const snap = await getDoc(doc(db, "users", firebaseUser.email.toLowerCase()));
+              if (snap.exists()) {
+                const userData = snap.data();
+                setUser(userData);
+                try { localStorage.setItem("bas_session", JSON.stringify(userData)); } catch(e) {}
+              }
+            } catch(e) {}
+          } else if (!firebaseUser) {
+            try {
+              const s = localStorage.getItem("bas_session");
+              const saved = s ? JSON.parse(s) : null;
+              if (!saved?.isAdmin) { setUser(null); localStorage.removeItem("bas_session"); }
+            } catch(e) { setUser(null); }
+          }
+          setAuthReady(true);
+        });
+        return () => unsub();
+      });
+    });
+  }, []);
 
   function handleLogin(u) {
     setUser(u);
@@ -1117,7 +1207,12 @@ export default function App() {
     setPage("home");
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    try {
+      const { signOut } = await import("firebase/auth");
+      const { auth } = await import("./firebase");
+      await signOut(auth);
+    } catch(e) {}
     setUser(null);
     try { localStorage.removeItem("bas_session"); } catch(e) {}
     setPage("home");
@@ -1129,6 +1224,14 @@ export default function App() {
   }
 
   const isAdmin = user?.isAdmin;
+
+  if (!authReady) return (
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:"'Oswald',Georgia,serif", color:C.white }}>
+      <FontLoader />
+      <img src={LOGO_SRC} alt="Bank Angler Series" style={{ height:"100px", objectFit:"contain", filter:"brightness(0) invert(1)", marginBottom:"20px" }} />
+      <div style={{ fontSize:"14px", color:C.dim, letterSpacing:"2px" }}>LOADING...</div>
+    </div>
+  );
 
   if (!user) return <><FontLoader /><AuthScreen onLogin={handleLogin} /></>;
 
