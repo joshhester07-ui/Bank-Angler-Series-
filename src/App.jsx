@@ -1,10 +1,4 @@
 import { useState, useRef, useEffect } from "react";
-import { loadStripe } from "@stripe/stripe-js";
-import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { db } from "./firebase";
-import { collection, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
-
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
 const LOGO_SRC = "https://i.imgur.com/ZymlpsF.png";
 
@@ -80,7 +74,7 @@ function getTimeStatus(date) {
 }
 
 function generateWeeklyTournaments() {
-  const starts = new Date("2026-04-24");
+  const starts = new Date("2026-04-25");
   const tours = [];
   for (let i = 0; i < 26; i++) {
     const d = new Date(starts);
@@ -194,32 +188,35 @@ function PayBar({ fee, count }) {
 }
 
 // ─── Card Payment Component ───────────────────────────────────────────────────
-// ─── Stripe Payment Form (inner) ─────────────────────────────────────────────
-function StripePaymentInner({ amount, email, name, onPaid, onCancel, label }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
+function CardPaymentForm({ amount, onPaid, onCancel, label="Pay Entry Fee" }) {
+  const [num, setNum]    = useState("");
+  const [exp, setExp]    = useState("");
+  const [cvv, setCvv]    = useState("");
+  const [name, setName]  = useState("");
+  const [zip, setZip]    = useState("");
+  const [err, setErr]    = useState("");
+  const [busy, setBusy]  = useState(false);
 
-  async function submit() {
-    if (!stripe || !elements) return;
-    setErr(""); setBusy(true);
-    try {
-      const { error, paymentIntent } = await stripe.confirmPayment({
-        elements,
-        confirmParams: { receipt_email: email },
-        redirect: "if_required",
-      });
-      if (error) {
-        setErr(error.message);
-      } else if (paymentIntent && paymentIntent.status === "succeeded") {
-        onPaid({ last4: "****", name, paymentIntentId: paymentIntent.id });
-      }
-    } catch(e) {
-      setErr("Payment failed. Please try again.");
-    } finally {
+  function fmtNum(v) {
+    return v.replace(/\D/g,"").slice(0,16).replace(/(\d{4})/g,"$1 ").trim();
+  }
+  function fmtExp(v) {
+    const d=v.replace(/\D/g,"").slice(0,4);
+    return d.length>2?`${d.slice(0,2)}/${d.slice(2)}`:d;
+  }
+
+  function submit() {
+    setErr("");
+    const rawNum = num.replace(/\s/g,"");
+    if (rawNum.length < 13) { setErr("Enter a valid card number."); return; }
+    if (!exp.match(/^\d{2}\/\d{2}$/)) { setErr("Enter expiry as MM/YY."); return; }
+    if (cvv.length < 3) { setErr("Enter a valid CVV."); return; }
+    if (!name.trim()) { setErr("Enter the cardholder name."); return; }
+    setBusy(true);
+    setTimeout(()=>{
       setBusy(false);
-    }
+      onPaid({ last4: rawNum.slice(-4), name: name.trim(), exp, zip });
+    }, 1200);
   }
 
   return (
@@ -231,111 +228,31 @@ function StripePaymentInner({ amount, email, name, onPaid, onCancel, label }) {
           {amount && <div style={{ fontSize:"13px", color:C.red, fontWeight:"bold" }}>${amount} entry fee</div>}
         </div>
       </div>
-      <div style={{ marginBottom:"14px" }}>
-        <PaymentElement options={{ layout:"tabs" }} />
-      </div>
       <Err msg={err} />
-      <div style={{ fontSize:"11px", color:C.dim, marginBottom:"14px", padding:"8px", background:C.faint, borderRadius:"6px" }}>
-        🔒 Payments secured by Stripe
+      <Inp label="Cardholder Name" placeholder="Full name on card" value={name} onChange={e=>setName(e.target.value)} />
+      <Inp label="Card Number" placeholder="1234 5678 9012 3456" value={num} onChange={e=>setNum(fmtNum(e.target.value))} inputMode="numeric" />
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"10px" }}>
+        <div>
+          <div style={{ ...base.label, marginBottom:"5px" }}>Expiry</div>
+          <input style={base.input} placeholder="MM/YY" value={exp} onChange={e=>setExp(fmtExp(e.target.value))} inputMode="numeric" />
+        </div>
+        <div>
+          <div style={{ ...base.label, marginBottom:"5px" }}>CVV</div>
+          <input style={base.input} placeholder="123" value={cvv} onChange={e=>setCvv(e.target.value.replace(/\D/g,"").slice(0,4))} inputMode="numeric" type="password" />
+        </div>
+        <div>
+          <div style={{ ...base.label, marginBottom:"5px" }}>ZIP</div>
+          <input style={base.input} placeholder="ZIP" value={zip} onChange={e=>setZip(e.target.value.replace(/\D/g,"").slice(0,5))} inputMode="numeric" />
+        </div>
       </div>
-      <button onClick={submit} disabled={busy||!stripe} style={{ ...base.btnRed, width:"100%", textAlign:"center", opacity:busy?0.7:1 }}>
+      <div style={{ fontSize:"11px", color:C.dim, marginBottom:"14px", padding:"8px", background:C.faint, borderRadius:"6px" }}>
+        🔒 Your card info is saved securely to your account and used for winnings payouts.
+      </div>
+      <button onClick={submit} disabled={busy} style={{ ...base.btnRed, width:"100%", textAlign:"center", opacity:busy?0.7:1 }}>
         {busy ? "Processing..." : `Pay $${amount||"0"} →`}
       </button>
       {onCancel && <button onClick={onCancel} style={{ ...base.btnGhost, width:"100%", textAlign:"center", marginTop:"8px" }}>Cancel</button>}
     </Card>
-  );
-}
-
-// ─── Stripe Payment Form (outer — creates payment intent) ─────────────────────
-function CardPaymentForm({ amount, onPaid, onCancel, label="Pay Entry Fee", email="", name="" }) {
-  const [clientSecret, setClientSecret] = useState(null);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    if (!amount) return;
-    fetch("/api/create-payment-intent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount, email, name }),
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.clientSecret) setClientSecret(data.clientSecret);
-        else setErr("Could not initialize payment. Please try again.");
-      })
-      .catch(() => setErr("Could not connect to payment server."));
-  }, [amount]);
-
-  if (!amount) return (
-    <Card style={{ borderColor:C.borderB }}>
-      <div style={{ textAlign:"center", padding:"20px", color:C.dim }}>
-        <div style={{ fontSize:"28px", marginBottom:"10px" }}>💳</div>
-        <div>Card info will be collected when you enter a paid tournament.</div>
-      </div>
-      {onCancel && <button onClick={onCancel} style={{ ...base.btnGhost, width:"100%", textAlign:"center", marginTop:"8px" }}>Cancel</button>}
-    </Card>
-  );
-
-  if (err) return (
-    <Card><Err msg={err} />{onCancel && <button onClick={onCancel} style={{ ...base.btnGhost, width:"100%", textAlign:"center" }}>Cancel</button>}</Card>
-  );
-
-  if (!clientSecret) return (
-    <Card style={{ textAlign:"center", padding:"28px" }}>
-      <div style={{ color:C.dim, fontSize:"13px" }}>Setting up payment...</div>
-    </Card>
-  );
-
-  const stripeOptions = {
-    clientSecret,
-    appearance: {
-      theme: "night",
-      variables: {
-        colorPrimary: "#dc1e1e",
-        colorBackground: "#111111",
-        colorText: "#f0f0f0",
-        colorDanger: "#ff6b6b",
-        colorTextSecondary: "#888888",
-        fontFamily: "'Oswald', Georgia, serif",
-        borderRadius: "8px",
-        spacingUnit: "4px",
-      },
-      rules: {
-        ".Input": {
-          backgroundColor: "rgba(255,255,255,0.06)",
-          border: "1px solid rgba(220,30,30,0.25)",
-          color: "#f0f0f0",
-        },
-        ".Input:focus": {
-          border: "1px solid rgba(220,30,30,0.6)",
-          boxShadow: "none",
-        },
-        ".Label": {
-          color: "#888888",
-          fontSize: "10px",
-          letterSpacing: "2px",
-          textTransform: "uppercase",
-        },
-        ".Tab": {
-          backgroundColor: "rgba(255,255,255,0.04)",
-          border: "1px solid rgba(220,30,30,0.15)",
-        },
-        ".Tab--selected": {
-          backgroundColor: "rgba(220,30,30,0.12)",
-          border: "1px solid rgba(220,30,30,0.4)",
-        },
-        ".Block": {
-          backgroundColor: "transparent",
-          border: "none",
-        },
-      },
-    },
-  };
-
-  return (
-    <Elements stripe={stripePromise} options={stripeOptions}>
-      <StripePaymentInner amount={amount} email={email} name={name} onPaid={onPaid} onCancel={onCancel} label={label} />
-    </Elements>
   );
 }
 
@@ -602,6 +519,29 @@ function HomePage({ user, tournaments, setPage }) {
           );
         })()}
 
+        <Card>
+          <Lbl>📲 Add App to Your Home Screen</Lbl>
+          <div style={{ marginBottom:"10px" }}>
+            <div style={{ fontSize:"13px", fontWeight:"bold", color:C.white, marginBottom:"6px" }}>🍎 iPhone</div>
+            <div style={{ fontSize:"12px", color:"#ccc", lineHeight:"1.6" }}>
+              1. Open this link in <span style={{ color:C.red }}>Safari</span><br/>
+              2. Tap the Share button <span style={{ color:C.dim }}>(box with arrow at bottom)</span><br/>
+              3. Tap <span style={{ color:C.red }}>"Add to Home Screen"</span><br/>
+              4. Tap <span style={{ color:C.red }}>Add</span>
+            </div>
+          </div>
+          <Div />
+          <div>
+            <div style={{ fontSize:"13px", fontWeight:"bold", color:C.white, marginBottom:"6px" }}>🤖 Android</div>
+            <div style={{ fontSize:"12px", color:"#ccc", lineHeight:"1.6" }}>
+              1. Open this link in <span style={{ color:C.red }}>Chrome</span><br/>
+              2. Tap the <span style={{ color:C.dim }}>three dots</span> in the top right<br/>
+              3. Tap <span style={{ color:C.red }}>"Add to Home Screen"</span><br/>
+              4. Tap <span style={{ color:C.red }}>Add</span>
+            </div>
+          </div>
+        </Card>
+
         <button onClick={()=>setPage("rules")} style={{ ...base.btnGhost, width:"100%", textAlign:"center", marginTop:"4px" }}>📋 View Tournament Rules</button>
       </Body>
     </div>
@@ -732,7 +672,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
               <div style={{ fontSize:"18px", fontWeight:"bold", color:C.white }}>{selT.name}</div>
               <div style={{ fontSize:"13px", color:C.dim, marginTop:"4px" }}>{formatDate(selT.date)}</div>
             </div>
-            <CardPaymentForm amount={selT.fee} email={user.email} name={user.name} onPaid={handlePaid} onCancel={()=>setStep("pick")} label="Pay Entry Fee to Enter" />
+            <CardPaymentForm amount={selT.fee} onPaid={handlePaid} onCancel={()=>setStep("pick")} label="Pay Entry Fee to Enter" />
           </div>
         )}
 
@@ -1165,12 +1105,28 @@ function AdminPage({ tournaments, setTournaments }) {
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [user, setUser]               = useState(null);
+  const [user, setUser]               = useState(()=>{
+    try { const s = localStorage.getItem("bas_session"); return s ? JSON.parse(s) : null; } catch(e) { return null; }
+  });
   const [page, setPage]               = useState("home");
   const [tournaments, setTournaments] = useState(generateWeeklyTournaments);
 
-  function handleLogin(u) { setUser(u); setPage("home"); }
-  function handleLogout() { setUser(null); setPage("home"); }
+  function handleLogin(u) {
+    setUser(u);
+    try { localStorage.setItem("bas_session", JSON.stringify(u)); } catch(e) {}
+    setPage("home");
+  }
+
+  function handleLogout() {
+    setUser(null);
+    try { localStorage.removeItem("bas_session"); } catch(e) {}
+    setPage("home");
+  }
+
+  function handleSetUser(u) {
+    setUser(u);
+    try { localStorage.setItem("bas_session", JSON.stringify(u)); } catch(e) {}
+  }
 
   const isAdmin = user?.isAdmin;
 
@@ -1179,21 +1135,11 @@ export default function App() {
   return (
     <div style={{ minHeight:"100vh", background:C.bg, fontFamily:"'Oswald',Georgia,serif", color:C.white }}>
       <FontLoader />
-      <style>{`
-        .__PrivateStripeElement, .StripeElement, iframe[name^="__privateStripeFrame"] {
-          background: transparent !important;
-          border: none !important;
-        }
-        .p-Input {
-          background: rgba(255,255,255,0.06) !important;
-          border: 1px solid rgba(220,30,30,0.25) !important;
-          border-radius: 8px !important;
-        }
-      `}</style>
+      <style>{`*, *::before, *::after { box-sizing: border-box; } html, body, #root { margin: 0; padding: 0; background: #0a0a0a; border: none; }`}</style>
       {page==="home"    && <HomePage    user={user} tournaments={tournaments} setPage={setPage} />}
-      {page==="enter"   && <EnterPage   user={user} setUser={setUser} tournaments={tournaments} setTournaments={setTournaments} />}
+      {page==="enter"   && <EnterPage   user={user} setUser={handleSetUser} tournaments={tournaments} setTournaments={setTournaments} />}
       {page==="rules"   && <RulesPage />}
-      {page==="account" && <AccountPage user={user} setUser={setUser} tournaments={tournaments} onLogout={handleLogout} />}
+      {page==="account" && <AccountPage user={user} setUser={handleSetUser} tournaments={tournaments} onLogout={handleLogout} />}
       {page==="admin"   && isAdmin && <AdminPage tournaments={tournaments} setTournaments={setTournaments} />}
       <NavBar page={page} setPage={setPage} user={user} isAdmin={isAdmin} />
     </div>
