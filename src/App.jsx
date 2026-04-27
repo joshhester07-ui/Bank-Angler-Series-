@@ -1177,8 +1177,37 @@ export default function App() {
     try { const s = localStorage.getItem("bas_session"); return s ? JSON.parse(s) : null; } catch(e) { return null; }
   });
   const [page, setPage]               = useState("home");
-  const [tournaments, setTournaments] = useState(generateWeeklyTournaments);
+  const [tournaments, setTournaments] = useState([]);
   const [authReady, setAuthReady]     = useState(false);
+  const [toursReady, setToursReady]   = useState(false);
+
+  // ── Load tournaments from Firestore in real time ──────────────────────────
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "tournaments"), async snap => {
+      if (snap.empty) {
+        // First time — seed with generated Saturday tournaments
+        const generated = generateWeeklyTournaments();
+        for (const t of generated) {
+          await setDoc(doc(db, "tournaments", t.id), t);
+        }
+        setTournaments(generated);
+      } else {
+        const tours = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+        tours.sort((a,b) => a.date < b.date ? -1 : 1);
+        setTournaments(tours);
+      }
+      setToursReady(true);
+    });
+    return () => unsub();
+  }, []);
+
+  // ── Save tournaments to Firestore ─────────────────────────────────────────
+  async function saveTournaments(updated) {
+    setTournaments(updated);
+    for (const t of updated) {
+      await setDoc(doc(db, "tournaments", t.id), t);
+    }
+  }
 
   useEffect(()=>{
     import("firebase/auth").then(({ onAuthStateChanged }) => {
@@ -1231,7 +1260,7 @@ export default function App() {
 
   const isAdmin = user?.isAdmin;
 
-  if (!authReady) return (
+  if (!authReady || !toursReady) return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", fontFamily:"'Oswald',Georgia,serif", color:C.white }}>
       <FontLoader />
       <img src={LOGO_SRC} alt="Bank Angler Series" style={{ height:"100px", objectFit:"contain", filter:"brightness(0) invert(1)", marginBottom:"20px" }} />
@@ -1246,10 +1275,10 @@ export default function App() {
       <FontLoader />
       <style>{`*, *::before, *::after { box-sizing: border-box; } html, body, #root { margin: 0; padding: 0; background: #0a0a0a; border: none; }`}</style>
       {page==="home"    && <HomePage    user={user} tournaments={tournaments} setPage={setPage} />}
-      {page==="enter"   && <EnterPage   user={user} setUser={handleSetUser} tournaments={tournaments} setTournaments={setTournaments} />}
+      {page==="enter"   && <EnterPage   user={user} setUser={handleSetUser} tournaments={tournaments} setTournaments={saveTournaments} />}
       {page==="rules"   && <RulesPage />}
       {page==="account" && <AccountPage user={user} setUser={handleSetUser} tournaments={tournaments} onLogout={handleLogout} />}
-      {page==="admin"   && isAdmin && <AdminPage tournaments={tournaments} setTournaments={setTournaments} />}
+      {page==="admin"   && isAdmin && <AdminPage tournaments={tournaments} setTournaments={saveTournaments} />}
       <NavBar page={page} setPage={setPage} user={user} isAdmin={isAdmin} />
     </div>
   );
