@@ -680,7 +680,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
 
   function ensureRegistered(t) {
     if (t.anglers.find(a=>a.email===user.email)) return t;
-    return { ...t, anglers:[...t.anglers,{ id:user.id, name:user.name, email:user.email, fish:[], paid:true }] };
+    return { ...t, anglers:[...t.anglers,{ id:user.id, name:user.name, email:user.email, fish:[], paid:true, avatar:user.avatar||null, payout:user.payout||null }] };
   }
 
   function handlePhoto(e) {
@@ -1022,19 +1022,65 @@ function AccountPage({ user, setUser, tournaments, onLogout }) {
 
         {tab==="payment" && (
           <div>
+            {/* Payout Method */}
+            <Card>
+              <Lbl>Payout Method</Lbl>
+              <div style={{ fontSize:"12px", color:C.dim, marginBottom:"12px" }}>
+                How should we send your winnings? Select your preferred app and enter your handle.
+              </div>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:"8px", marginBottom:"12px" }}>
+                {[
+                  { id:"venmo", label:"Venmo", icon:"💸" },
+                  { id:"cashapp", label:"Cash App", icon:"💵" },
+                  { id:"zelle", label:"Zelle", icon:"⚡" },
+                ].map(p=>(
+                  <button key={p.id} onClick={async ()=>{
+                    const updated = {...user, payout:{...user.payout, method:p.id}};
+                    await setDoc(doc(db, "users", user.email), updated);
+                    setUser(updated);
+                  }} style={{ padding:"12px 8px", borderRadius:"10px", border:`1px solid ${user.payout?.method===p.id?C.red:C.border}`, background:user.payout?.method===p.id?C.redD:C.faint, cursor:"pointer", fontFamily:"'Oswald',Georgia,serif", color:user.payout?.method===p.id?C.white:C.dim, textAlign:"center" }}>
+                    <div style={{ fontSize:"20px", marginBottom:"4px" }}>{p.icon}</div>
+                    <div style={{ fontSize:"12px", fontWeight:"bold", letterSpacing:"1px" }}>{p.label}</div>
+                  </button>
+                ))}
+              </div>
+              {user.payout?.method && (
+                <div>
+                  <div style={{ ...base.label, marginBottom:"5px" }}>
+                    Your {user.payout.method === "venmo" ? "Venmo" : user.payout.method === "cashapp" ? "Cash App" : "Zelle"} {user.payout.method === "zelle" ? "email or phone" : "username"}
+                  </div>
+                  <div style={{ display:"flex", gap:"8px" }}>
+                    <input
+                      style={{ ...base.input, flex:1 }}
+                      placeholder={user.payout.method === "venmo" ? "@username" : user.payout.method === "cashapp" ? "$cashtag" : "email or phone"}
+                      value={user.payout?.handle||""}
+                      onChange={e => setUser({...user, payout:{...user.payout, handle:e.target.value}})}
+                    />
+                    <button onClick={async ()=>{
+                      const updated = {...user};
+                      await setDoc(doc(db, "users", user.email), updated);
+                      setMsg("Payout info saved!");
+                    }} style={{ ...base.btnRed, padding:"11px 16px", flexShrink:0 }}>Save</button>
+                  </div>
+                </div>
+              )}
+              {user.payout?.method && user.payout?.handle && (
+                <div style={{ marginTop:"12px", background:C.greenD, border:`1px solid ${C.green}`, borderRadius:"8px", padding:"10px", fontSize:"12px", color:C.green }}>
+                  ✓ Winnings will be sent to {user.payout.method === "venmo" ? "Venmo" : user.payout.method === "cashapp" ? "Cash App" : "Zelle"}: <strong>{user.payout.handle}</strong>
+                </div>
+              )}
+            </Card>
+
+            {/* Entry Fee Card */}
             {user.card && !showCardForm ? (
               <Card>
-                <Lbl>Saved Payment Card</Lbl>
+                <Lbl>Entry Fee Card</Lbl>
                 <div style={{ display:"flex", alignItems:"center", gap:"14px", padding:"12px", background:C.faint, borderRadius:"10px", marginBottom:"14px" }}>
                   <span style={{ fontSize:"28px" }}>💳</span>
                   <div>
                     <div style={{ fontSize:"15px", fontWeight:"bold", color:C.white }}>{user.card.name}</div>
                     <div style={{ fontSize:"13px", color:C.dim }}>•••• •••• •••• {user.card.last4}</div>
-                    <div style={{ fontSize:"12px", color:C.dim }}>Exp {user.card.exp}{user.card.zip?` · ZIP ${user.card.zip}`:""}</div>
                   </div>
-                </div>
-                <div style={{ fontSize:"12px", color:C.dim, background:C.faint, borderRadius:"6px", padding:"10px", marginBottom:"14px" }}>
-                  💰 Winnings are paid directly to this card the Monday after tournament review.
                 </div>
                 <button onClick={()=>setShowCardForm(true)} style={{ ...base.btnGhost, width:"100%", textAlign:"center" }}>Update Card</button>
               </Card>
@@ -1042,9 +1088,6 @@ function AccountPage({ user, setUser, tournaments, onLogout }) {
               <div>
                 {user.card && <button onClick={()=>setShowCardForm(false)} style={{ ...base.btnGhost, padding:"7px 12px", fontSize:"12px", marginBottom:"14px" }}>← Cancel</button>}
                 <CardPaymentForm amount={null} onPaid={handleCardSaved} onCancel={user.card?()=>setShowCardForm(false):null} label={user.card?"Update Payment Card":"Add Payment Card"} />
-                <div style={{ fontSize:"12px", color:C.dim, textAlign:"center", marginTop:"8px" }}>
-                  Your card is used for entry fees and receiving winnings.
-                </div>
               </div>
             )}
           </div>
@@ -1201,21 +1244,35 @@ function AdminPage({ tournaments, setTournaments }) {
                   </div>
                   <div style={{ fontSize:"10px", color:C.dim, marginBottom:"8px", letterSpacing:"1px", textTransform:"uppercase" }}>Anglers ({t.anglers.length}) · Payout {getNextMonday(t.date)}</div>
                   {r.length===0 && <div style={{ color:"#444", fontSize:"13px" }}>No entries yet.</div>}
-                  {r.map((a,i)=>(
-                    <div key={a.email||a.name} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", background:C.faint, borderRadius:"8px", padding:"8px 10px", marginBottom:"5px" }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                        <span>{i<3&&a.total>0?MEDAL[i]:`#${i+1}`}</span>
-                        <div>
-                          <div style={{ fontSize:"13px", fontWeight:"bold" }}>{a.name}</div>
-                          <div style={{ fontSize:"11px", color:C.dim }}>{a.fish.length} fish{places[i]&&a.total>0?` · wins $${places[i].amt}`:""}</div>
+                  {r.map((a,i)=>{
+                    const payoutIcon = a.payout?.method==="venmo"?"💸":a.payout?.method==="cashapp"?"💵":a.payout?.method==="zelle"?"⚡":null;
+                    const payoutLabel = a.payout?.method==="venmo"?"Venmo":a.payout?.method==="cashapp"?"Cash App":a.payout?.method==="zelle"?"Zelle":null;
+                    return (
+                      <div key={a.email||a.name} style={{ background:C.faint, borderRadius:"8px", padding:"8px 10px", marginBottom:"5px" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                            <span>{i<3&&a.total>0?MEDAL[i]:`#${i+1}`}</span>
+                            <div>
+                              <div style={{ fontSize:"13px", fontWeight:"bold" }}>{a.name}</div>
+                              <div style={{ fontSize:"11px", color:C.dim }}>{a.fish.length} fish{places[i]&&a.total>0?` · wins $${places[i].amt}`:""}</div>
+                            </div>
+                          </div>
+                          <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                            <span style={{ color:C.red, fontWeight:"bold", fontSize:"13px" }}>{a.total>0?`${a.total.toFixed(1)}"`:"-"}</span>
+                            <button onClick={()=>removeAngler(t.id,a.email||a.name)} style={{ background:"none", border:"none", color:C.err, cursor:"pointer", fontSize:"14px" }}>✕</button>
+                          </div>
                         </div>
+                        {payoutIcon && a.payout?.handle ? (
+                          <div style={{ marginTop:"5px", display:"inline-flex", alignItems:"center", gap:"6px", background:"rgba(62,207,96,0.07)", border:"1px solid rgba(62,207,96,0.2)", borderRadius:"6px", padding:"3px 8px" }}>
+                            <span style={{ fontSize:"11px" }}>{payoutIcon}</span>
+                            <span style={{ fontSize:"11px", color:C.green }}>{payoutLabel}: <strong>{a.payout.handle}</strong></span>
+                          </div>
+                        ) : (
+                          <div style={{ marginTop:"5px", fontSize:"11px", color:"#555" }}>⚠ No payout method set</div>
+                        )}
                       </div>
-                      <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
-                        <span style={{ color:C.red, fontWeight:"bold", fontSize:"13px" }}>{a.total>0?`${a.total.toFixed(1)}"`:"-"}</span>
-                        <button onClick={()=>removeAngler(t.id,a.email||a.name)} style={{ background:"none", border:"none", color:C.err, cursor:"pointer", fontSize:"14px" }}>✕</button>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </Card>
