@@ -194,77 +194,31 @@ function PayBar({ fee, count }) {
 }
 
 // ─── Card Payment Component ───────────────────────────────────────────────────
-// ─── Stripe Payment Inner Form ────────────────────────────────────────────────
-function StripePaymentInner({ amount, onPaid, onCancel, label, email, name }) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const [err, setErr] = useState("");
+// ─── Stripe Checkout Payment Form ────────────────────────────────────────────
+function CardPaymentForm({ amount, onPaid, onCancel, label="Pay Entry Fee", email="", name="", tournamentId="", tournamentName="" }) {
   const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState("");
 
-  async function submit() {
-    if (!stripe || !elements) return;
-    setErr(""); setBusy(true);
+  async function handlePay() {
+    setBusy(true); setErr("");
     try {
-      const { error, paymentIntent } = await stripe.confirmPayment({
-        elements,
-        confirmParams: { receipt_email: email },
-        redirect: "if_required",
+      const res = await fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, email, name, tournamentId, tournamentName }),
       });
-      if (error) {
-        setErr(error.message);
-      } else if (paymentIntent && paymentIntent.status === "succeeded") {
-        onPaid({ last4: "****", name, paymentIntentId: paymentIntent.id });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setErr(data.error || "Could not start payment. Please try again.");
       }
     } catch(e) {
-      setErr("Payment failed. Please try again.");
+      setErr("Connection error. Please try again.");
     } finally {
       setBusy(false);
     }
   }
-
-  return (
-    <Card style={{ borderColor:C.borderB }}>
-      <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"14px" }}>
-        <span style={{ fontSize:"22px" }}>💳</span>
-        <div>
-          <div style={{ fontSize:"16px", fontWeight:"bold", color:C.white }}>{label}</div>
-          {amount && <div style={{ fontSize:"13px", color:C.red, fontWeight:"bold" }}>${amount} entry fee</div>}
-        </div>
-      </div>
-      <div style={{ marginBottom:"14px" }}>
-        <PaymentElement options={{ layout:"tabs" }} />
-      </div>
-      <Err msg={err} />
-      <div style={{ fontSize:"11px", color:C.dim, marginBottom:"14px", padding:"8px", background:C.faint, borderRadius:"6px" }}>
-        🔒 Payments secured by Stripe
-      </div>
-      <button onClick={submit} disabled={busy||!stripe} style={{ ...base.btnRed, width:"100%", textAlign:"center", opacity:busy?0.7:1 }}>
-        {busy ? "Processing..." : `Pay $${amount||"0"} →`}
-      </button>
-      {onCancel && <button onClick={onCancel} style={{ ...base.btnGhost, width:"100%", textAlign:"center", marginTop:"8px" }}>Cancel</button>}
-    </Card>
-  );
-}
-
-// ─── Stripe Payment Form (outer) ──────────────────────────────────────────────
-function CardPaymentForm({ amount, onPaid, onCancel, label="Pay Entry Fee", email="", name="" }) {
-  const [clientSecret, setClientSecret] = useState(null);
-  const [err, setErr] = useState("");
-
-  useEffect(() => {
-    if (!amount) return;
-    fetch("/api/create-payment-intent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount, email, name }),
-    })
-      .then(r => r.json())
-      .then(data => {
-        if (data.clientSecret) setClientSecret(data.clientSecret);
-        else setErr(`Payment setup failed: ${data.error || "Unknown error"}`);
-      })
-      .catch(e => setErr(`Could not connect to payment server: ${e.message}`));
-  }, [amount]);
 
   if (!amount) return (
     <Card style={{ borderColor:C.borderB }}>
@@ -276,44 +230,30 @@ function CardPaymentForm({ amount, onPaid, onCancel, label="Pay Entry Fee", emai
     </Card>
   );
 
-  if (err) return (
-    <Card><Err msg={err} />{onCancel && <button onClick={onCancel} style={{ ...base.btnGhost, width:"100%", textAlign:"center" }}>Cancel</button>}</Card>
-  );
-
-  if (!clientSecret) return (
-    <Card style={{ textAlign:"center", padding:"28px" }}>
-      <div style={{ color:C.dim, fontSize:"13px" }}>Setting up payment...</div>
-    </Card>
-  );
-
-  const stripeOptions = {
-    clientSecret,
-    appearance: {
-      theme: "night",
-      variables: {
-        colorPrimary: "#dc1e1e",
-        colorBackground: "#111111",
-        colorText: "#f0f0f0",
-        colorDanger: "#ff6b6b",
-        colorTextSecondary: "#888888",
-        fontFamily: "'Oswald', Georgia, serif",
-        borderRadius: "8px",
-      },
-      rules: {
-        ".Input": { backgroundColor:"rgba(255,255,255,0.06)", border:"1px solid rgba(220,30,30,0.25)", color:"#f0f0f0" },
-        ".Input:focus": { border:"1px solid rgba(220,30,30,0.6)", boxShadow:"none" },
-        ".Label": { color:"#888888", fontSize:"10px", letterSpacing:"2px", textTransform:"uppercase" },
-        ".Tab": { backgroundColor:"rgba(255,255,255,0.04)", border:"1px solid rgba(220,30,30,0.15)" },
-        ".Tab--selected": { backgroundColor:"rgba(220,30,30,0.12)", border:"1px solid rgba(220,30,30,0.4)" },
-        ".Block": { backgroundColor:"transparent", border:"none" },
-      },
-    },
-  };
-
   return (
-    <Elements stripe={stripePromise} options={stripeOptions}>
-      <StripePaymentInner amount={amount} email={email} name={name} onPaid={onPaid} onCancel={onCancel} label={label} />
-    </Elements>
+    <Card style={{ borderColor:C.borderB }}>
+      <div style={{ display:"flex", alignItems:"center", gap:"10px", marginBottom:"16px" }}>
+        <span style={{ fontSize:"22px" }}>💳</span>
+        <div>
+          <div style={{ fontSize:"16px", fontWeight:"bold", color:C.white }}>{label}</div>
+          <div style={{ fontSize:"13px", color:C.red, fontWeight:"bold" }}>${amount} entry fee</div>
+        </div>
+      </div>
+      <div style={{ background:C.faint, borderRadius:"10px", padding:"14px", marginBottom:"16px" }}>
+        <div style={{ fontSize:"13px", color:"#ccc", lineHeight:"1.6" }}>
+          <div style={{ marginBottom:"6px" }}>You'll be taken to Stripe's secure payment page to complete your entry fee.</div>
+          <div style={{ fontSize:"11px", color:C.dim }}>After payment you'll be returned to the app automatically.</div>
+        </div>
+      </div>
+      <Err msg={err} />
+      <div style={{ fontSize:"11px", color:C.dim, marginBottom:"14px", padding:"8px", background:C.faint, borderRadius:"6px" }}>
+        🔒 Payments secured by Stripe — all major cards accepted
+      </div>
+      <button onClick={handlePay} disabled={busy} style={{ ...base.btnRed, width:"100%", textAlign:"center", padding:"14px", fontSize:"15px", opacity:busy?0.7:1 }}>
+        {busy ? "Redirecting to payment..." : `Pay $${amount} Securely →`}
+      </button>
+      {onCancel && <button onClick={onCancel} style={{ ...base.btnGhost, width:"100%", textAlign:"center", marginTop:"8px" }}>Cancel</button>}
+    </Card>
   );
 }
 
@@ -784,7 +724,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
               <div style={{ fontSize:"18px", fontWeight:"bold", color:C.white }}>{selT.name}</div>
               <div style={{ fontSize:"13px", color:C.dim, marginTop:"4px" }}>{formatDate(selT.date)}</div>
             </div>
-            <CardPaymentForm amount={selT.fee} email={user.email} name={user.name} onPaid={handlePaid} onCancel={()=>setStep("pick")} label="Pay Entry Fee to Enter" />
+            <CardPaymentForm amount={selT.fee} email={user.email} name={user.name} tournamentId={selId} tournamentName={selT.name} onPaid={handlePaid} onCancel={()=>setStep("pick")} label="Pay Entry Fee to Enter" />
           </div>
         )}
 
@@ -1236,7 +1176,18 @@ export default function App() {
   const [authReady, setAuthReady]     = useState(false);
   const [toursReady, setToursReady]   = useState(false);
 
-  // ── Load tournaments from Firestore in real time ──────────────────────────
+  // ── Handle Stripe Checkout redirect return ───────────────────────────────
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const payment = params.get("payment");
+    const tournamentId = params.get("tournament");
+    if (payment === "success" && tournamentId) {
+      // Clear URL params
+      window.history.replaceState({}, "", window.location.pathname);
+      // Register angler in tournament
+      setPage("enter");
+    }
+  }, []);
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "tournaments"), async snap => {
       if (snap.empty) {
