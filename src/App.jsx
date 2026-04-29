@@ -674,7 +674,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
   const active = tournaments.filter(t=>t.active && t.date>=today);
   const selT   = tournaments.find(t=>t.id===selId);
   const myEntry= selT?.anglers.find(a=>a.email===user.email);
-  const maxFish= 5;
+  const maxFish= 999;
   const ts     = selT ? getTimeStatus(selT.date) : null;
   const hasPaidEntry = selT && myEntry;
 
@@ -819,7 +819,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <div>
                   <div style={{ fontSize:"15px", fontWeight:"bold" }}>{user.name}</div>
-                  <div style={{ fontSize:"12px", color:C.dim }}>{myEntry ? `${myEntry.fish.length}/${maxFish} fish logged` : "Ready to fish"}</div>
+                  <div style={{ fontSize:"12px", color:C.dim }}>{myEntry ? `${myEntry.fish.length} fish logged — best 5 count` : "Ready to fish"}</div>
                 </div>
                 <div style={{ textAlign:"right" }}>
                   <div style={{ fontSize:"9px", color:"#b8922a", letterSpacing:"1px", textTransform:"uppercase" }}>Today's Code</div>
@@ -869,12 +869,12 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
               <div style={{ fontSize:"44px" }}>🐟</div>
               <div style={{ fontSize:"22px", fontWeight:"bold", color:C.white, marginTop:"10px" }}>Fish Logged!</div>
               <div style={{ fontSize:"13px", color:C.dim, marginTop:"6px" }}>
-                {myEntry ? `${myEntry.fish.length}/${maxFish} submitted` : "Submitted"}
+                {myEntry ? `${myEntry.fish.length} fish submitted · best 5 count toward score` : "Submitted"}
               </div>
             </Card>
             <LiveBoard />
             <div style={{ display:"flex", gap:"10px" }}>
-              {myEntry && myEntry.fish.length<maxFish && ts?.status==="open" && (
+              {ts?.status==="open" && (
                 <button onClick={()=>setStep("submit")} style={{ ...base.btnRed, flex:1, textAlign:"center" }}>＋ Log Another</button>
               )}
               <button onClick={()=>setStep("pick")} style={{ ...base.btnGhost, flex:1, textAlign:"center" }}>↩ Back</button>
