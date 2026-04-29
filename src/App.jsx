@@ -688,35 +688,34 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
     const r=new FileReader(); r.onload=ev=>setPhoto(ev.target.result); r.readAsDataURL(f);
   }
 
-  function handlePaid(cardInfo) {
-    // Save card to user
-    const users = JSON.parse(localStorage.getItem("bas_users")||"[]");
-    const updated = users.map(u=>u.email===user.email?{...u,card:cardInfo}:u);
-    localStorage.setItem("bas_users",JSON.stringify(updated));
-    setUser({...user, card:cardInfo});
-    // Register in tournament
-    setTournaments(tournaments.map(t=>t.id!==selId?t:ensureRegistered(t)));
+  async function handlePaid(cardInfo) {
+    // Save card to user in Firestore
+    const updated = {...user, card:cardInfo};
+    await setDoc(doc(db, "users", user.email), updated);
+    setUser(updated);
+    // Register in tournament and save to Firestore
+    const registered = tournaments.map(t=>t.id!==selId?t:ensureRegistered(t));
+    await setTournaments(registered);
     setStep("submit");
   }
 
-  function submitFish() {
+  async function submitFish() {
     const cur = getTimeStatus(selT.date);
     if (cur.status!=="open") { setErr("Submissions are outside the tournament window (7:30 AM – 3:00 PM)."); return; }
     const len = parseFloat(fishLen);
     if (!len||len<=0||len>40) { setErr("Enter a valid length (1–40 inches)."); return; }
     if (!photo) { setErr("Please attach a photo."); return; }
     if (code.toUpperCase().trim()!==selT.code) { setErr(`Code doesn't match. Write "${selT.code}" on paper and include it in your photo.`); return; }
-    setTournaments(tournaments.map(t=>{
+    const updated = tournaments.map(t=>{
       if(t.id!==selId) return t;
       return { ...t, anglers: t.anglers.map(a=>a.email!==user.email?a:{ ...a, fish:[...a.fish,{len,photo}] }) };
-    }));
+    });
+    await setTournaments(updated);
     setFishLen(""); setPhoto(null); setCode(""); setErr(""); setStep("done");
   }
 
   function Avatar({ angler, size=36 }) {
-    const users = JSON.parse(localStorage.getItem("bas_users")||"[]");
-    const u = users.find(u=>u.email===angler.email);
-    const avatar = u?.avatar;
+    const avatar = angler?.avatar;
     return avatar
       ? <img src={avatar} alt={angler.name} style={{ width:size, height:size, borderRadius:"50%", objectFit:"cover", border:`2px solid ${C.border}`, flexShrink:0 }} />
       : <div style={{ width:size, height:size, borderRadius:"50%", background:`linear-gradient(135deg,#8b0f0f,${C.red})`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*0.4, fontWeight:"bold", color:C.white, flexShrink:0, border:`2px solid ${C.border}` }}>
@@ -1152,25 +1151,44 @@ function AccountPage({ user, setUser, tournaments, onLogout }) {
 
 // ─── Admin Page ───────────────────────────────────────────────────────────────
 function AdminPage({ tournaments, setTournaments }) {
-  const [expanded, setExpanded] = useState(null);
-  const [showForm, setShowForm] = useState(false);
-  const [copied, setCopied]     = useState(null);
-  const [form, setForm]         = useState({ name:"", fee:20, date:todayStr(), code:"" });
+  const [expanded, setExpanded]         = useState(null);
+  const [showForm, setShowForm]         = useState(false);
+  const [copied, setCopied]             = useState(null);
+  const [form, setForm]                 = useState({ name:"", fee:20, date:todayStr(), code:"" });
+  const [selectedAngler, setSelectedAngler] = useState(null);
 
-  function createTournament() {
+  // Load full angler profile from Firestore
+  async function viewAngler(angler) {
+    try {
+      const snap = await getDoc(doc(db, "users", angler.email.toLowerCase()));
+      if (snap.exists()) {
+        setSelectedAngler({ ...angler, ...snap.data() });
+      } else {
+        setSelectedAngler(angler);
+      }
+    } catch(e) {
+      setSelectedAngler(angler);
+    }
+  }
+
+  async function createTournament() {
     if (!form.name.trim()) return;
     const id = "CUSTOM-"+Date.now().toString(36).toUpperCase();
     const seed=`${id}-${form.date}`;let h=0;for(let i=0;i<seed.length;i++){h=((h<<5)-h)+seed.charCodeAt(i);h|=0;}
     const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789";let c="",v=Math.abs(h);for(let i=0;i<6;i++){c+=chars[v%chars.length];v=Math.floor(v/chars.length)+(i*7919);}
     const code = form.code.trim().toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6)||c;
-    setTournaments([...tournaments,{ id, name:form.name.trim(), format:"five", fee:Number(form.fee), date:form.date, code, anglers:[], active:true }]);
+    const newT = { id, name:form.name.trim(), format:"five", fee:Number(form.fee), date:form.date, code, anglers:[], active:true };
+    await setDoc(doc(db, "tournaments", id), newT);
     setForm({ name:"", fee:20, date:todayStr(), code:"" });
     setShowForm(false);
   }
 
-  function toggleActive(id) { setTournaments(tournaments.map(t=>t.id===id?{...t,active:!t.active}:t)); }
-  function deleteT(id) { setTournaments(tournaments.filter(t=>t.id!==id)); if(expanded===id)setExpanded(null); }
-  function removeAngler(tid,aid) { setTournaments(tournaments.map(t=>t.id!==tid?t:{...t,anglers:t.anglers.filter(a=>a.id!==aid&&a.email!==aid)})); }
+  async function toggleActive(id) { await setTournaments(tournaments.map(t=>t.id===id?{...t,active:!t.active}:t)); }
+  async function deleteT(id) {
+    await setTournaments(tournaments.filter(t=>t.id!==id));
+    if(expanded===id) setExpanded(null);
+  }
+  async function removeAngler(tid,aid) { await setTournaments(tournaments.map(t=>t.id!==tid?t:{...t,anglers:t.anglers.filter(a=>a.id!==aid&&a.email!==aid)})); }
   function copyCode(code,id) { navigator.clipboard?.writeText(code); setCopied(id); setTimeout(()=>setCopied(null),1500); }
 
   const sorted = [...tournaments].sort((a,b)=>a.date<b.date?-1:1);
