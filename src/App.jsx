@@ -1342,11 +1342,16 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ── Save tournaments to Firestore ─────────────────────────────────────────
+  // ── Save tournaments to Firestore — only saves changed tournament ─────────
   async function saveTournaments(updated) {
     setTournaments(updated);
+    // Find which tournament changed and only save that one
+    const current = tournaments;
     for (const t of updated) {
-      await setDoc(doc(db, "tournaments", t.id), t);
+      const old = current.find(c => c.id === t.id);
+      if (!old || JSON.stringify(old) !== JSON.stringify(t)) {
+        await setDoc(doc(db, "tournaments", t.id), t);
+      }
     }
   }
 
