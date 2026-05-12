@@ -794,18 +794,17 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
               <div style={{ fontSize:"16px", fontWeight:"bold", color:C.white, marginBottom:"4px" }}>{selT.name}</div>
               <div style={{ fontSize:"13px", color:C.dim, marginBottom:"16px" }}>{formatDate(selT.date)}</div>
               <div style={{ background:C.faint, borderRadius:"8px", padding:"12px", marginBottom:"14px" }}>
-                <div style={{ fontSize:"10px", color:C.dim, letterSpacing:"1px", textTransform:"uppercase", marginBottom:"6px" }}>Paying with saved card</div>
+                <div style={{ fontSize:"10px", color:C.dim, letterSpacing:"1px", textTransform:"uppercase", marginBottom:"6px" }}>Saved card on file</div>
                 <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
                   <span style={{ fontSize:"20px" }}>💳</span>
                   <div>
                     <div style={{ fontSize:"14px", color:C.white }}>{user.card.name}</div>
-                    <div style={{ fontSize:"12px", color:C.dim }}>•••• {user.card.last4} · Exp {user.card.exp}</div>
+                    <div style={{ fontSize:"12px", color:C.dim }}>•••• {user.card.last4}</div>
                   </div>
                 </div>
               </div>
-              <button onClick={()=>handlePaid(user.card)} style={{ ...base.btnRed, width:"100%", textAlign:"center" }}>Pay ${selT.fee} & Enter →</button>
-              <button onClick={()=>setStep("pay")} style={{ ...base.btnGhost, width:"100%", textAlign:"center", marginTop:"8px", fontSize:"12px" }}>Use a different card</button>
             </Card>
+            <CardPaymentForm amount={selT.fee} email={user.email} name={user.name} onPaid={handlePaid} onCancel={()=>setStep("pick")} label="Confirm & Pay Entry Fee" />
           </div>
         )}
 
