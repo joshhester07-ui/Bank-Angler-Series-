@@ -763,7 +763,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
             </div>
             {active.length===0 && <Card><div style={{ color:C.dim, textAlign:"center", padding:"24px 0" }}>No active tournaments right now.</div></Card>}
             {active.map(t=>(
-              <button key={t.id} onClick={()=>{ setSelId(t.id); setStep(t.anglers.find(a=>a.email===user.email) ? "submit" : (user.card ? "pay_confirm" : "pay")); setErr(""); }} style={{ width:"100%", background:C.redD, border:`1px solid ${C.border}`, borderRadius:"14px", padding:"18px", marginBottom:"10px", cursor:"pointer", textAlign:"left", color:C.white, fontFamily:"'Oswald',Georgia,serif" }}>
+              <button key={t.id} onClick={()=>{ setSelId(t.id); setStep(t.anglers.find(a=>a.email===user.email) ? "submit" : "pay"); setErr(""); }} style={{ width:"100%", background:C.redD, border:`1px solid ${C.border}`, borderRadius:"14px", padding:"18px", marginBottom:"10px", cursor:"pointer", textAlign:"left", color:C.white, fontFamily:"'Oswald',Georgia,serif" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
                   <div style={{ fontSize:"16px", fontWeight:"bold" }}>{t.name}</div>
                   <StatusPill date={t.date} />
@@ -787,26 +787,6 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
           </div>
         )}
 
-        {step==="pay_confirm" && selT && user.card && (
-          <div>
-            <button onClick={()=>setStep("pick")} style={{ ...base.btnGhost, padding:"7px 12px", fontSize:"12px", marginBottom:"14px" }}>← Back</button>
-            <Card style={{ borderColor:C.borderB }}>
-              <div style={{ fontSize:"16px", fontWeight:"bold", color:C.white, marginBottom:"4px" }}>{selT.name}</div>
-              <div style={{ fontSize:"13px", color:C.dim, marginBottom:"16px" }}>{formatDate(selT.date)}</div>
-              <div style={{ background:C.faint, borderRadius:"8px", padding:"12px", marginBottom:"14px" }}>
-                <div style={{ fontSize:"10px", color:C.dim, letterSpacing:"1px", textTransform:"uppercase", marginBottom:"6px" }}>Saved card on file</div>
-                <div style={{ display:"flex", alignItems:"center", gap:"10px" }}>
-                  <span style={{ fontSize:"20px" }}>💳</span>
-                  <div>
-                    <div style={{ fontSize:"14px", color:C.white }}>{user.card.name}</div>
-                    <div style={{ fontSize:"12px", color:C.dim }}>•••• {user.card.last4}</div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-            <CardPaymentForm amount={selT.fee} email={user.email} name={user.name} onPaid={handlePaid} onCancel={()=>setStep("pick")} label="Confirm & Pay Entry Fee" />
-          </div>
-        )}
 
         {step==="submit" && selT && (
           <div>
