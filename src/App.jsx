@@ -693,17 +693,18 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
     const f = e.target.files?.[0]; if (!f) return;
     const reader = new FileReader();
     reader.onload = ev => {
-      // Compress image before storing
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const maxW = 800, maxH = 600;
+        const maxW = 400, maxH = 300;
         let w = img.width, h = img.height;
         if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
         if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
         canvas.width = w; canvas.height = h;
         canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-        setPhoto(canvas.toDataURL("image/jpeg", 0.6));
+        const compressed = canvas.toDataURL("image/jpeg", 0.4);
+        console.log("Photo size:", Math.round(compressed.length / 1024), "KB");
+        setPhoto(compressed);
       };
       img.src = ev.target.result;
     };
@@ -742,7 +743,8 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
       await saveTournaments(updated);
       setFishLen(""); setPhoto(null); setCode(""); setErr(""); setStep("done");
     } catch(e) {
-      setErr("Failed to submit. Please try again.");
+      console.error("Submit fish error:", e.code, e.message);
+      setErr(`Failed to submit: ${e.message || "Please try again."}`);
     } finally {
       setUploading(false);
     }
