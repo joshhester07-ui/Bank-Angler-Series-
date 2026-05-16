@@ -740,7 +740,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
         if(t.id!==selId) return t;
         return { ...t, anglers: t.anglers.map(a=>a.email!==user.email?a:{ ...a, fish:[...a.fish,{len, photo}] }) };
       });
-      await saveTournaments(updated);
+      await setTournaments(updated);
       setFishLen(""); setPhoto(null); setCode(""); setErr(""); setStep("done");
     } catch(e) {
       console.error("Submit fish error:", e.code, e.message);
