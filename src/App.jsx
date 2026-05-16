@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from "react";
 import { loadStripe } from "@stripe/stripe-js";
 import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
-import { db } from "./firebase";
+import { db, storage } from "./firebase";
 import { collection, doc, setDoc, getDoc, onSnapshot } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY);
 
@@ -608,9 +609,7 @@ function HomePage({ user, tournaments, setPage }) {
           const ranked = getRankings(lastT.anglers, 5);
           const winner = ranked[0];
           if (!winner || winner.total === 0) return null;
-          const users = JSON.parse(localStorage.getItem("bas_users")||"[]");
-          const winnerUser = users.find(u => u.email === winner.email);
-          const avatar = winnerUser?.avatar;
+          const avatar = winner.avatar;
           const topFish = winner.topFish?.[0];
           return (
             <div style={{ background:"linear-gradient(135deg,#1a1400,#0f0f00)", border:`1px solid ${C.gold}44`, borderRadius:"16px", padding:"18px", marginBottom:"12px" }}>
@@ -690,8 +689,17 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
   }
 
   function handlePhoto(e) {
-    const f=e.target.files?.[0]; if(!f) return;
-    const r=new FileReader(); r.onload=ev=>setPhoto(ev.target.result); r.readAsDataURL(f);
+    const f = e.target.files?.[0]; if (!f) return;
+    // Store file for upload on submit
+    setPhoto(f);
+  }
+
+  async function uploadPhoto(file, tournamentId, anglerEmail) {
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `fish/${tournamentId}/${anglerEmail}/${Date.now()}.${ext}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    return await getDownloadURL(storageRef);
   }
 
   async function handlePaid(cardInfo) {
@@ -712,12 +720,19 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
     if (!len||len<=0||len>40) { setErr("Enter a valid length (1–40 inches)."); return; }
     if (!photo) { setErr("Please attach a photo."); return; }
     if (code.toUpperCase().trim()!==selT.code) { setErr(`Code doesn't match. Write "${selT.code}" on paper and include it in your photo.`); return; }
-    const updated = tournaments.map(t=>{
-      if(t.id!==selId) return t;
-      return { ...t, anglers: t.anglers.map(a=>a.email!==user.email?a:{ ...a, fish:[...a.fish,{len,photo}] }) };
-    });
-    await setTournaments(updated);
-    setFishLen(""); setPhoto(null); setCode(""); setErr(""); setStep("done");
+    setErr("Uploading photo...");
+    try {
+      // Upload photo to Firebase Storage
+      const photoUrl = await uploadPhoto(photo, selId, user.email);
+      const updated = tournaments.map(t=>{
+        if(t.id!==selId) return t;
+        return { ...t, anglers: t.anglers.map(a=>a.email!==user.email?a:{ ...a, fish:[...a.fish,{len, photo:photoUrl}] }) };
+      });
+      await saveTournaments(updated);
+      setFishLen(""); setPhoto(null); setCode(""); setErr(""); setStep("done");
+    } catch(e) {
+      setErr("Failed to upload photo. Please try again.");
+    }
   }
 
   function Avatar({ angler, size=36 }) {
@@ -831,7 +846,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
                 <div style={{ marginBottom:"12px" }}>
                   <div style={{ ...base.label, marginBottom:"6px" }}>Photo</div>
                   <div onClick={()=>fileRef.current.click()} style={{ border:"2px dashed rgba(220,30,30,0.25)", borderRadius:"10px", padding:"16px", textAlign:"center", cursor:"pointer", background:photo?C.redD:"transparent" }}>
-                    {photo ? <img src={photo} alt="fish" style={{ maxWidth:"100%", maxHeight:"200px", borderRadius:"8px", objectFit:"contain" }} /> : <div><div style={{ fontSize:"28px" }}>📸</div><div style={{ fontSize:"13px", color:C.dim, marginTop:"6px" }}>Tap to attach photo</div></div>}
+                    {photo ? <img src={photo instanceof File ? URL.createObjectURL(photo) : photo} alt="fish" style={{ maxWidth:"100%", maxHeight:"200px", borderRadius:"8px", objectFit:"contain" }} /> : <div><div style={{ fontSize:"28px" }}>📸</div><div style={{ fontSize:"13px", color:C.dim, marginTop:"6px" }}>Tap to attach photo</div></div>}
                     <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display:"none" }} />
                   </div>
                   {photo && <button onClick={()=>setPhoto(null)} style={{ ...base.btnGhost, fontSize:"11px", marginTop:"6px" }}>✕ Retake</button>}
@@ -884,27 +899,26 @@ function AccountPage({ user, setUser, tournaments, onLogout }) {
   const [showCardForm, setShowCardForm] = useState(false);
   const avatarRef = useRef();
 
-  function saveUsers(updated) { localStorage.setItem("bas_users",JSON.stringify(updated)); }
-
-  function handleAvatarChange(e) {
+  async function handleAvatarChange(e) {
     const f = e.target.files?.[0]; if (!f) return;
-    const r = new FileReader();
-    r.onload = ev => {
-      const avatar = ev.target.result;
-      const users = JSON.parse(localStorage.getItem("bas_users")||"[]");
-      saveUsers(users.map(u=>u.email===user.email?{...u,avatar}:u));
-      setUser({...user, avatar});
-    };
-    r.readAsDataURL(f);
+    try {
+      const storageRef = ref(storage, `avatars/${user.email}/${Date.now()}.${f.name.split(".").pop()||"jpg"}`);
+      await uploadBytes(storageRef, f);
+      const avatarUrl = await getDownloadURL(storageRef);
+      const updated = {...user, avatar:avatarUrl};
+      await setDoc(doc(db, "users", user.email), updated);
+      setUser(updated);
+    } catch(e) {
+      console.error("Avatar upload failed:", e);
+    }
   }
 
-  function saveProfile() {
+  async function saveProfile() {
     setErr(""); setMsg("");
     if (!name.trim()) { setErr("Name cannot be empty."); return; }
-    const users = JSON.parse(localStorage.getItem("bas_users")||"[]");
-    const updated = users.map(u=>u.email===user.email?{...u,name:name.trim(),notify}:u);
-    saveUsers(updated);
-    setUser({...user, name:name.trim(), notify});
+    const updated = {...user, name:name.trim(), notify};
+    await setDoc(doc(db, "users", user.email), updated);
+    setUser(updated);
     setMsg("Profile updated!");
   }
 
