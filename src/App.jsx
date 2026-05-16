@@ -1250,14 +1250,15 @@ function AdminPage({ tournaments, setTournaments }) {
                   {r.map((a,i)=>{
                     const payoutIcon = a.payout?.method==="venmo"?"💸":a.payout?.method==="cashapp"?"💵":a.payout?.method==="zelle"?"⚡":null;
                     const payoutLabel = a.payout?.method==="venmo"?"Venmo":a.payout?.method==="cashapp"?"Cash App":a.payout?.method==="zelle"?"Zelle":null;
+                    const sortedFish = [...a.fish].sort((x,y)=>y.len-x.len);
                     return (
-                      <div key={a.email||a.name} style={{ background:C.faint, borderRadius:"8px", padding:"8px 10px", marginBottom:"5px" }}>
+                      <div key={a.email||a.name} style={{ background:C.faint, borderRadius:"8px", padding:"8px 10px", marginBottom:"8px" }}>
                         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                           <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
                             <span>{i<3&&a.total>0?MEDAL[i]:`#${i+1}`}</span>
                             <div>
                               <div style={{ fontSize:"13px", fontWeight:"bold" }}>{a.name}</div>
-                              <div style={{ fontSize:"11px", color:C.dim }}>{a.fish.length} fish{places[i]&&a.total>0?` · wins $${places[i].amt}`:""}</div>
+                              <div style={{ fontSize:"11px", color:C.dim }}>{a.fish.length} fish submitted{places[i]&&a.total>0?` · wins $${places[i].amt}`:""}</div>
                             </div>
                           </div>
                           <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
@@ -1272,6 +1273,34 @@ function AdminPage({ tournaments, setTournaments }) {
                           </div>
                         ) : (
                           <div style={{ marginTop:"5px", fontSize:"11px", color:"#555" }}>⚠ No payout method set</div>
+                        )}
+                        {/* Fish photo review */}
+                        {sortedFish.length > 0 && (
+                          <div style={{ marginTop:"10px" }}>
+                            <div style={{ fontSize:"10px", color:C.dim, letterSpacing:"1px", textTransform:"uppercase", marginBottom:"6px" }}>Submitted Fish</div>
+                            <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+                              {sortedFish.map((f,fi)=>(
+                                <div key={fi} style={{ display:"flex", alignItems:"center", gap:"10px", background:"rgba(0,0,0,0.3)", borderRadius:"8px", padding:"8px", border: fi < 5 ? `1px solid rgba(220,30,30,0.3)` : "1px solid rgba(255,255,255,0.05)" }}>
+                                  {f.photo && <img src={f.photo} alt={`fish ${fi+1}`} style={{ width:"70px", height:"52px", objectFit:"cover", borderRadius:"6px", flexShrink:0 }} />}
+                                  <div style={{ flex:1 }}>
+                                    <div style={{ fontSize:"16px", fontWeight:"bold", color: fi < 5 ? C.red : C.dim }}>{f.len}"</div>
+                                    <div style={{ fontSize:"10px", color:C.dim }}>{fi < 5 ? "✓ Counts toward score" : "Not counted (outside top 5)"}</div>
+                                  </div>
+                                  <button onClick={()=>{
+                                    const updated = tournaments.map(tour => tour.id!==t.id ? tour : {
+                                      ...tour, anglers: tour.anglers.map(ang => ang.email!==a.email ? ang : {
+                                        ...ang, fish: ang.fish.filter((_,idx) => {
+                                          const si = [...ang.fish].map((ff,ii)=>({...ff,ii})).sort((x,y)=>y.len-x.len);
+                                          return si[fi]?.ii !== idx;
+                                        })
+                                      })
+                                    });
+                                    setTournaments(updated);
+                                  }} style={{ background:"none", border:"none", color:C.err, cursor:"pointer", fontSize:"16px", flexShrink:0 }}>✕</button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
                     );
@@ -1327,10 +1356,9 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ── Save tournaments to Firestore — only saves changed tournament ─────────
+  // ── Save tournaments to Firestore — let onSnapshot update state ──────────
   async function saveTournaments(updated) {
-    setTournaments(updated);
-    // Find which tournament changed and only save that one
+    // Only save the tournament that changed — onSnapshot will update state
     const current = tournaments;
     for (const t of updated) {
       const old = current.find(c => c.id === t.id);

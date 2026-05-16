@@ -5,14 +5,10 @@ export default async function handler(req, res) {
   try {
     const { amount, email, name } = req.body;
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100),
-      currency: "usd",
-      receipt_email: email,
-      metadata: { name, email },
+      amount: Math.round(amount * 100), currency: "usd",
+      receipt_email: email, metadata: { name, email },
       payment_method_types: ["card"],
     });
     res.status(200).json({ clientSecret: paymentIntent.client_secret });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 }
