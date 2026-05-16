@@ -691,16 +691,28 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
 
   function handlePhoto(e) {
     const f = e.target.files?.[0]; if (!f) return;
-    // Store file for upload on submit
-    setPhoto(f);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      // Compress image before storing
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxW = 800, maxH = 600;
+        let w = img.width, h = img.height;
+        if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+        if (h > maxH) { w = Math.round(w * maxH / h); h = maxH; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        setPhoto(canvas.toDataURL("image/jpeg", 0.6));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(f);
   }
 
-  async function uploadPhoto(file, tournamentId, anglerEmail) {
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `fish/${tournamentId}/${anglerEmail}/${Date.now()}.${ext}`;
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+  async function uploadPhoto(file) {
+    // Returns the already-compressed base64 photo
+    return file;
   }
 
   async function handlePaid(cardInfo) {
@@ -721,18 +733,16 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
     if (!len||len<=0||len>40) { setErr("Enter a valid length (1–40 inches)."); return; }
     if (!photo) { setErr("Please attach a photo."); return; }
     if (code.toUpperCase().trim()!==selT.code) { setErr(`Code doesn't match. Write "${selT.code}" on paper and include it in your photo.`); return; }
-    setErr("");
-    setUploading(true);
+    setErr(""); setUploading(true);
     try {
-      const photoUrl = await uploadPhoto(photo, selId, user.email);
       const updated = tournaments.map(t=>{
         if(t.id!==selId) return t;
-        return { ...t, anglers: t.anglers.map(a=>a.email!==user.email?a:{ ...a, fish:[...a.fish,{len, photo:photoUrl}] }) };
+        return { ...t, anglers: t.anglers.map(a=>a.email!==user.email?a:{ ...a, fish:[...a.fish,{len, photo}] }) };
       });
       await saveTournaments(updated);
       setFishLen(""); setPhoto(null); setCode(""); setErr(""); setStep("done");
     } catch(e) {
-      setErr("Failed to upload photo. Please try again.");
+      setErr("Failed to submit. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -849,7 +859,7 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
                 <div style={{ marginBottom:"12px" }}>
                   <div style={{ ...base.label, marginBottom:"6px" }}>Photo</div>
                   <div onClick={()=>fileRef.current.click()} style={{ border:"2px dashed rgba(220,30,30,0.25)", borderRadius:"10px", padding:"16px", textAlign:"center", cursor:"pointer", background:photo?C.redD:"transparent" }}>
-                    {photo ? <img src={photo instanceof File ? URL.createObjectURL(photo) : photo} alt="fish" style={{ maxWidth:"100%", maxHeight:"200px", borderRadius:"8px", objectFit:"contain" }} /> : <div><div style={{ fontSize:"28px" }}>📸</div><div style={{ fontSize:"13px", color:C.dim, marginTop:"6px" }}>Tap to attach photo</div></div>}
+                    {photo ? <img src={photo} alt="fish" style={{ maxWidth:"100%", maxHeight:"200px", borderRadius:"8px", objectFit:"contain" }} /> : <div><div style={{ fontSize:"28px" }}>📸</div><div style={{ fontSize:"13px", color:C.dim, marginTop:"6px" }}>Tap to attach photo</div></div>}
                     <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display:"none" }} />
                   </div>
                   {photo && <button onClick={()=>setPhoto(null)} style={{ ...base.btnGhost, fontSize:"11px", marginTop:"6px" }}>✕ Retake</button>}
