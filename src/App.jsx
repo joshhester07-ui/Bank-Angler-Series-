@@ -53,7 +53,13 @@ function getRankings(anglers, max) {
   }).sort((a,b)=>b.total-a.total);
 }
 
-function todayStr() { return new Date().toISOString().split("T")[0]; }
+function todayStr() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth()+1).padStart(2,"0");
+  const d = String(now.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
 function formatDate(d) { return new Date(d+"T12:00:00").toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric",year:"numeric"}); }
 function formatDateShort(d) { return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"}); }
 
