@@ -667,12 +667,13 @@ function HomePage({ user, tournaments, setPage }) {
 
 // ─── Enter Fish Page ──────────────────────────────────────────────────────────
 function EnterPage({ user, setUser, tournaments, setTournaments }) {
-  const [step, setStep]       = useState("pick");
-  const [selId, setSelId]     = useState(null);
-  const [fishLen, setFishLen] = useState("");
-  const [photo, setPhoto]     = useState(null);
-  const [code, setCode]       = useState("");
-  const [err, setErr]         = useState("");
+  const [step, setStep]           = useState("pick");
+  const [selId, setSelId]         = useState(null);
+  const [fishLen, setFishLen]     = useState("");
+  const [photo, setPhoto]         = useState(null);
+  const [code, setCode]           = useState("");
+  const [err, setErr]             = useState("");
+  const [uploading, setUploading] = useState(false);
   const fileRef = useRef();
 
   const today  = todayStr();
@@ -720,9 +721,9 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
     if (!len||len<=0||len>40) { setErr("Enter a valid length (1–40 inches)."); return; }
     if (!photo) { setErr("Please attach a photo."); return; }
     if (code.toUpperCase().trim()!==selT.code) { setErr(`Code doesn't match. Write "${selT.code}" on paper and include it in your photo.`); return; }
-    setErr("Uploading photo...");
+    setErr("");
+    setUploading(true);
     try {
-      // Upload photo to Firebase Storage
       const photoUrl = await uploadPhoto(photo, selId, user.email);
       const updated = tournaments.map(t=>{
         if(t.id!==selId) return t;
@@ -732,6 +733,8 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
       setFishLen(""); setPhoto(null); setCode(""); setErr(""); setStep("done");
     } catch(e) {
       setErr("Failed to upload photo. Please try again.");
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -856,7 +859,9 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
                   <input value={code} onChange={e=>setCode(e.target.value.toUpperCase())} placeholder="6-character code" maxLength={6} style={{ ...base.input, letterSpacing:"5px", fontWeight:"bold", fontSize:"20px", textAlign:"center" }} />
                 </div>
                 <Err msg={err} />
-                <button onClick={submitFish} style={{ ...base.btnRed, width:"100%", textAlign:"center", padding:"13px" }}>✓ Submit Fish</button>
+                <button onClick={submitFish} disabled={uploading} style={{ ...base.btnRed, width:"100%", textAlign:"center", padding:"13px", opacity:uploading?0.7:1 }}>
+                  {uploading ? "⏳ Uploading photo..." : "✓ Submit Fish"}
+                </button>
               </Card>
             )}
             <LiveBoard />
@@ -1370,12 +1375,13 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // ── Save tournaments to Firestore — let onSnapshot update state ──────────
+  // ── Save tournaments — update local state immediately, then sync to Firestore
   async function saveTournaments(updated) {
-    // Only save the tournament that changed — onSnapshot will update state
-    const current = tournaments;
+    // Update local state immediately so UI responds instantly
+    setTournaments(updated);
+    // Save only changed tournaments to Firestore
     for (const t of updated) {
-      const old = current.find(c => c.id === t.id);
+      const old = tournaments.find(c => c.id === t.id);
       if (!old || JSON.stringify(old) !== JSON.stringify(t)) {
         await setDoc(doc(db, "tournaments", t.id), t);
       }
