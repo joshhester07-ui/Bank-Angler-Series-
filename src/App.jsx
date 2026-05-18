@@ -717,13 +717,18 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
   }
 
   async function handlePaid(cardInfo) {
-    // Save card to user in Firestore
     const updated = {...user, card:cardInfo};
     await setDoc(doc(db, "users", user.email), updated);
     setUser(updated);
-    // Register in tournament and save to Firestore
-    const registered = tournaments.map(t=>t.id!==selId?t:ensureRegistered(t));
-    await setTournaments(registered);
+    // Register angler directly in Firestore
+    const tSnap = await getDoc(doc(db, "tournaments", selId));
+    if (tSnap.exists()) {
+      const latestT = tSnap.data();
+      if (!latestT.anglers.find(a=>a.email===user.email)) {
+        const newAnglers = [...latestT.anglers, { id:user.id, name:user.name, email:user.email, fish:[], paid:true, avatar:user.avatar||null, payout:user.payout||null }];
+        await setDoc(doc(db, "tournaments", selId), { ...latestT, anglers: newAnglers });
+      }
+    }
     setStep("submit");
   }
 
@@ -736,11 +741,14 @@ function EnterPage({ user, setUser, tournaments, setTournaments }) {
     if (code.toUpperCase().trim()!==selT.code) { setErr(`Code doesn't match. Write "${selT.code}" on paper and include it in your photo.`); return; }
     setErr(""); setUploading(true);
     try {
-      const updated = tournaments.map(t=>{
-        if(t.id!==selId) return t;
-        return { ...t, anglers: t.anglers.map(a=>a.email!==user.email?a:{ ...a, fish:[...a.fish,{len, photo}] }) };
-      });
-      await setTournaments(updated);
+      // Get the latest tournament data directly from Firestore
+      const tSnap = await getDoc(doc(db, "tournaments", selId));
+      if (!tSnap.exists()) { setErr("Tournament not found."); return; }
+      const latestT = tSnap.data();
+      const updatedAnglers = latestT.anglers.map(a =>
+        a.email !== user.email ? a : { ...a, fish:[...a.fish, { len, photo }] }
+      );
+      await setDoc(doc(db, "tournaments", selId), { ...latestT, anglers: updatedAnglers });
       setFishLen(""); setPhoto(null); setCode(""); setErr(""); setStep("done");
     } catch(e) {
       console.error("Submit fish error:", e.code, e.message);
@@ -1066,14 +1074,17 @@ function AccountPage({ user, setUser, tournaments, onLogout }) {
                   </div>
                   <div style={{ display:"flex", gap:"8px" }}>
                     <input
+                      id="payout-handle-input"
                       style={{ ...base.input, flex:1 }}
                       placeholder={user.payout.method === "venmo" ? "@username" : user.payout.method === "cashapp" ? "$cashtag" : "email or phone"}
                       value={user.payout?.handle||""}
                       onChange={e => setUser({...user, payout:{...user.payout, handle:e.target.value}})}
                     />
                     <button onClick={async ()=>{
-                      const updated = {...user};
+                      const handle = document.getElementById("payout-handle-input")?.value || user.payout?.handle || "";
+                      const updated = {...user, payout:{...user.payout, handle}};
                       await setDoc(doc(db, "users", user.email), updated);
+                      setUser(updated);
                       setMsg("Payout info saved!");
                     }} style={{ ...base.btnRed, padding:"11px 16px", flexShrink:0 }}>Save</button>
                   </div>
