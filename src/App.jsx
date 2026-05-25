@@ -353,7 +353,7 @@ const RULES = [
     "5 or fewer anglers: 1st place wins the prize pool.",
     "6–49 anglers: Top 3 places paid out.",
     "50+ anglers: Top 5 paid — 4th and 5th receive their entry fee back.",
-    "Payouts are sent to the card on file for each winner.",
+    "Winners must have a payout method saved in their account (Venmo, Cash App, or Zelle) to receive winnings. Set yours under Account → Payment before tournament day.",
   ]},
   { section:"Integrity", items:[
     "Any angler found to be cheating, manipulating photos, or submitting fraudulent entries will be immediately disqualified and permanently banned from future tournaments.",
