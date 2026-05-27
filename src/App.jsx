@@ -1379,21 +1379,27 @@ export default function App() {
       setPage("enter");
     }
   }, []);
+  // ── Load tournaments from Firestore ──────────────────────────────────────
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "tournaments"), async snap => {
-      if (snap.empty) {
-        // First time — seed with generated Saturday tournaments
-        const generated = generateWeeklyTournaments();
-        for (const t of generated) {
-          await setDoc(doc(db, "tournaments", t.id), t);
-        }
-        setTournaments(generated);
-      } else {
+      if (!snap.empty) {
         const tours = snap.docs.map(d => ({ ...d.data(), id: d.id }));
         tours.sort((a,b) => a.date < b.date ? -1 : 1);
         setTournaments(tours);
+        setToursReady(true);
+      } else {
+        // Only seed if truly empty — check one more time with a direct get
+        const { getDocs } = await import("firebase/firestore");
+        const check = await getDocs(collection(db, "tournaments"));
+        if (check.empty) {
+          const generated = generateWeeklyTournaments();
+          for (const t of generated) {
+            await setDoc(doc(db, "tournaments", t.id), t);
+          }
+          setTournaments(generated);
+        }
+        setToursReady(true);
       }
-      setToursReady(true);
     });
     return () => unsub();
   }, []);
